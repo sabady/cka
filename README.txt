@@ -255,3 +255,21 @@ preemptionPolicy: PreemptLowerPriority # defaults to terminating pods with lower
 
 In the pod yaml add priorityClassName under spec
 
+Multiple Schedulers
+===================
+After deplying a scheduler, in order to use it, add to the pod spec a schedulerName
+
+To view scheduler logs:
+kubectl get events -o wide
+kubectl logs custom-scheduler --name-space=kube-system
+
+Admission Controllers
+=====================
+
+Create TLS secret with crt and key files:
+kubectl create secret tls webhook-server-tls --cert=/root/keys/webhook-server-tls.crt --key=/root/keys/webhook-server-tls.key --namespace webhook-demo
+
+
+LOGGING AND MONITORING
+
+
