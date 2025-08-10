@@ -2,12 +2,8 @@
 
 CORE CONCEPTS
 
-kubectl create deployment --image=nginx nginx --dry-run=client -o yaml > deployment.yaml
-kubectl create deployment redis-deploy --image=redis --namespace=dev-ns -r=2
+kubectl create deployment redis-deploy --image=redis --namespace=dev-ns -r=2 -o yaml > deployment.yaml
 kubectl edit deployment nginx
-
-kubectl create deployment httpd-frontend --image=httpd:2.4-alpine -r=3 --dry-run=client -o yaml > httpd-deployment.yaml
-
 kubectl scale deployment httpd-frontend --replicas=4
 
 Create pod:
@@ -19,8 +15,7 @@ kubectl replace --force -f nginx.yaml
 
 To move a pod to another node you must delete and recreate it!
 
-The service endpoints count equals that of the pods count.
-1 endpoint per pod
+The service endpoints count equals that of the pods count - 1 endpoint per pod
 
 Create Service:
 kubectl expose pod redis --port=6379 --name redis-service --dry-run=client -o yaml
@@ -42,8 +37,7 @@ kubectl expose pod httpd --port=80 --name=httpd
 DNS
 ===
 To access pod on another namespace:
-<svc_name>.ns.svc.cluster.local
-db-service.dev.svc.cluster.local
+<svc_name>.<ns>.svc.cluster.local => db-service.dev.svc.cluster.local
 
 The metadata can have a namespace value
 
@@ -82,7 +76,7 @@ Annotations are used for other details.
 
 kubectl taint node node01 spray=mortein:NoSchedule
 
-cat bee.yaml 
+cat bee.yaml  -- set Tolerance
 apiVersion: v1
 kind: Pod
 metadata:
@@ -207,6 +201,7 @@ yaml is same as ReplicaSet
 
 Static Pods
 ===========
+kubelet runs the pod, not the api server - put the yaml file in /etc/kubernetes/manifests/ or the path value for staticPodPath in /var/lib/kubelet/config.yaml
 Pod name postfix is the node name
 
 ➜  cat bb.yaml 
@@ -228,11 +223,6 @@ spec:
   dnsPolicy: ClusterFirst
   restartPolicy: Always
 status: {}
-
-cp bb.yaml /etc/kubernetes/manifests/
-# kubelet will take it from there
-# The path may change, so check kubelet config:
-cat /var/lib/kubelet/config.yaml | grep -i staticPodPath
 
 Priorities
 ==========
@@ -271,5 +261,21 @@ kubectl create secret tls webhook-server-tls --cert=/root/keys/webhook-server-tl
 
 
 LOGGING AND MONITORING
+Monitoring
+==========
+Kubelet includes CAdvisor for use with Prometheus
+kubectl apply -f https://github.com/kubernetes-sigs/metrics-server/releases/latest/download/components.yaml
+kubectl top node - Nodes CPU RAM usage
+kubectl top pod - Pods CPU RAM usage
+
+Logs
+====
+kubectl logs -f pod-name container-name (if there is more than 1 container in the pod)
+
+APPLICATION LIFECYCLE
+Rolling updates and Rollbacks, config apps, scale, self healing.
+
+Rolling updates and Rollbacks
+=============================
 
 
