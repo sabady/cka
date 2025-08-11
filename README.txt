@@ -277,5 +277,301 @@ Rolling updates and Rollbacks, config apps, scale, self healing.
 
 Rolling updates and Rollbacks
 =============================
+kubectl rollout status deployment/app-deployment
+
+kubectl rollout history deployment/app-deployment
+
+Recreate strategy - destroy and create
+
+Rolling update - the default - replace pods one at a time
+
+You can use the kubectl apply command
+
+Changing image can be done with:
+kubectl set image deployment/app-deployment nginx-container=nginx:1.9.1
+kubectl set image deployment/<deployment-name> <container-name>=<new image>
+
+Rollback
+========
+kubectl rollout undo deployment/app-deployment
+
+Commands and Arguments
+======================
+
+Use the args, under the container name:
+The argument is passed to the entry point command as parameter...
+
+apiVersion: v1
+kind: Pod
+metadata:
+  name: bee
+spec:
+  containers:
+  - image: nginx
+    name: bee
+    args: ["10"]
+
+To override the entry point use the command field:
+
+apiVersion: v1
+kind: Pod
+metadata:
+  name: bee
+spec:
+  containers:
+  - image: nginx
+    name: bee
+    command: ["this"]
+    args: ["10"]
+
+This also works:
+
+spec:
+  containers:
+  - image: nginx
+    name: bee
+    command: 
+      - "this"
+      - "10"
+
+Environment Variables
+=====================
+env: under the image in the containers section:
+
+spec:
+  containers:
+  - image: nginx
+    name: bee
+    env:
+      - name:
+        value:
+
+Get value from configMap or Secret:
+
+    env:
+      - name:
+        valueFrom:
+          configMapKeyRef:
+
+    env:
+      - name:
+        valueFrom:
+          sectKeyRef:
+
+Config Map
+==========
+kubectl create configmap <config-name> \
+  --from-literal=<key>=>value> \
+  --from-literal=<key>=>value> 
+
+kubectl create configmap <config-name> \
+  --from-file=<path-to-key-value-pairs-file>
+
+configmap.yaml
+==============
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: test
+  namespace: default
+data:
+  APP_COLOR: blue
+  APP_MODE: prod
+
+kubectl create -f configmap.yaml
+
+
+kubectl create configmap test -o yaml
+kubectl describe cm test
+
+To use variables in a pod config:
+envFrom:
+  - configMapRef:
+      name: test
+      key: APP_COLOR
+
+Or as a volume
+volumes:
+- name: app-config-volume
+  configMap:
+    name: test
+
+secrets
+=======
+Imperative:
+kubectl create secret generic \
+  <secret-name> --from-literal=<key>=<value>
+
+kubectl create secret generic \
+  <secret-name> --from-file=<path>
+
+Declerative:
+secret.yaml
+apiVersion: v1
+kind: secret
+metadata:
+  name: app-secret
+data:
+  HOST: bXlkYgo=
+  USER: cm9vdAo=
+  PASSWORD: cGFzc3dkCg==
+
+The values must be base64 encoded
+
+kubectl get secrets
+kubectl describe secret <name> -o yaml
+
+In a pod use:
+
+spec:
+  containers:
+  - name:
+    image:
+    ports:
+      - containerPort:
+    envFrom:
+      - secretRef:
+          name: app-secret
+# This is the easiest way ^^^
+
+OR Single env
+    env:
+      - name: DB_PASS
+        valueFrom:
+          secretKeyRef:
+            name: app-secret
+            key: PASSWORD
+
+OR Volume
+  volumes:
+    - name: app-secret-volume
+      secret:
+        secretName: app-secret  
+
+# In the container add volumeMount:
+    volumeMounts:
+      - name: secret-volume
+        readOnly: true
+        mountPath: <path>
+
+# This will create a file for each secret using the keys
+
+# ENABLE ENCRYPTION AT REST since the etcd is not encrypted!
+# Configure least-privilege access to secrets - RBAC
+# Consider third party secrets store provider
+
+
+Encrypting secret data at rest
+==============================
+Only new secrets will be encrypted!
+
+Backup secrets:
+kubectl get secret -A -o yaml > all-secrets-backup-$(date +%F).yaml
+
+Resend secrets:
+kubectl get secret -A -o json \
+  | jq -c '.items[]' \
+  | while read -r secret; do
+      ns=$(echo "$secret" | jq -r '.metadata.namespace')
+      name=$(echo "$secret" | jq -r '.metadata.name')
+      typ=$(echo "$secret" | jq -r '.type')
+
+      # Skip service account tokens (these are managed by controller)
+      if [ "$typ" = "kubernetes.io/service-account-token" ]; then
+        echo "skipping SA token: $ns/$name"
+        continue
+      fi
+
+      echo "re-applying: $ns/$name"
+      echo "$secret" \
+        | jq 'del(.metadata.uid, .metadata.resourceVersion, .metadata.selfLink, .metadata.creationTimestamp, .metadata.managedFields, .status)' \ # del reoves fields
+        | kubectl apply -f -
+    done
+
+
+Multi container pods
+====================
+You might have initContainers at the same level as containers, but they will start first. Init containers will start according to their order in the yaml file each init must finish before the next one starts.
+
+Init container may have restartPolicy: Always which will make it a sidecar.
+
+apiVersion: v1
+kind: Pod
+metadata:
+  name: yellow
+spec:
+  containers:
+  - image: busybox
+    name: lemon
+    command: ["sleep","1000"]
+  - image: redis
+    name: gold
+
+cat elastic-search/app.yaml 
+apiVersion: v1
+kind: Pod
+metadata:
+  name: app
+  namespace: elastic-stack
+  labels:
+    name: app
+spec:
+  initContainers:
+  - name: sidecar
+    image: kodekloud/filebeat-configured
+    restartPolicy: Always
+    volumeMounts:
+    - mountPath: /var/log/event-simulator
+      name: log-volume
+  containers:
+  - name: app
+    image: kodekloud/event-simulator
+    volumeMounts:
+    - mountPath: /log
+      name: log-volume
+
+  volumes:
+  - name: log-volume
+    hostPath:
+      path: /var/log/webapp
+      type: DirectoryOrCreate
+
+Run command in pod:
+kubctl -n <namespace> exec -it app -- cat /log/app.log
+
+kubctl replace --force -f app.yaml - to force replace instead of recreate
+
+Scaling
+=======
+Vertical - Add resources. In k8s, add pods
+Horizantal - Add Instances (Hosts). In k8s, increase resources allocation to a pod
+
+Cluster Autoscaler - for infra horizantal scaling
+Horizontal Pod Autoscaler (HPA) - for stateless workloads
+Vertical Pod Autoscaler (VPA) - for stateful workloads
+
+Imperative HPA
+==============
+kubectl autoscale depolyment app \
+  --cpu-percent=50 --min=1 --max=10 # will increase or decrease the number of pods
+kubectl delete hpa app
+
+
+kubectl scale --replicas=3 deployment flask-web-app
+
+kubectl get hpa --watch
+
+VPA - for stateful workloads
+===
+Use kubectl edit deployment to do it manually
+
+For automation, vertical-pod-autoscaler needs to be installed (kube-system namespace)
+Recommender - monitors pods and sends recommendations to the Updater
+Updater - removes pods with issues
+Admission controller - also gets recommendations and applies new pods with updated resorces
+
+kubectl describe vpa flask-app
+
+CLUSTER MAINTENANCE
 
 
