@@ -856,3 +856,40 @@ subjects:
 - apiGroup: rbac.authorization.k8s.io
   kind: User
   name: michelle
+
+Service Accounts
+================
+kubectl create serviceaccount <name>
+kubectl create token <serviceaccount name>
+A timed token is created and stored in secret automatically 
+
+Assign access sing RBAC
+
+kubectrl describe serviceaccount <name>
+
+get the token:
+kubectl describe secret <token-name>
+
+Use:
+curl http://<IP>:6443/api -insecure --header "Authorization: Bearer <token>"
+
+If the pod is in the cluster you can mount the secret as a volume for easy access.
+
+Each namespace has a default serviceaccount, when a pod is created the default serviceaccount and the token secret are automaically mounted.
+
+A pod can have more service accounts by adding serviceAccountName in spec
+
+You can prevent the default serviceaccount mount using automountServiceAccountToken: false in spec
+
+DANGER!
+To create a non expiring token create service-account-token secret:
+apiVersion: v1
+kind: Secret
+type: kubernetes.io/service-account-token
+metadata:
+  name: secret-name
+
+  annotations:
+    kubernetes.io/service-account.name: <serviceaccount name> # associate the serviceaccount
+
+
