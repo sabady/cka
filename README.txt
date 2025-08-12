@@ -574,4 +574,285 @@ kubectl describe vpa flask-app
 
 CLUSTER MAINTENANCE
 
+pod-eviction-timeout is 5 minutes - if a node is down, the pod will recreate on another node
+To be sure prefer to drain the node before it goes offline:
+kubectl drain node-01
+Than
+kubectl uncordon node-01
+kubectl cordon node-01 - new pods wont be scheduled on the node
 
+K8S Releases
+============
+Cluster upgrade
+===============
+On controlplane:
+----------------
+kubeadm upgrade plan
+apt update
+apt install -y kubeadm
+kubeadm upgrade apply v1.32.7 (according to the plan)
+systemctl restart kubelet
+
+Backup and restore
+==================
+Backup:
+etcd:
+[with all the following etcd commands include --endpoints=https://127.0.0.1:2379 --cacert=/etc/etcd/ca.crt --cert=/etc/etcd/etcd-server.crt --key=/etc/etcd/etcd-server.key]
+In the etcd.service you'll find the data-dir path. back it up
+Snapshot: etcdctl snapshot save snap.db
+etcdctl snapshot status snap.db
+To get etcd version and other details (certs, IP, data-dir):
+kubectl describe po etcd-controlplane -n kube-system
+
+ETCDCTL_API=3 etcdctl \
+  --endpoints=https://127.0.0.1:2379 \
+  --cacert=/etc/kubernetes/pki/etcd/ca.crt \
+  --cert=/etc/kubernetes/pki/etcd/server.crt \
+  --key=/etc/kubernetes/pki/etcd/server.key \
+  snapshot save /backup/etcd-snapshot.db
+
+for offline file-level backup of the data dir:
+This copies the etcd backend database and WAL files to the target location.
+etcdutl backup \
+  --data-dir /var/lib/etcd \
+  --backup-dir /backup/etcd-backup
+
+To restore:
+service kube-apiserver stop
+etcdctl snapshot restore snap.db --data-dir <new path!>
+configure the new path in the etcd.service
+systemctl daemon-reload
+restart etcd
+restart kube-apiserver
+
+etcdutl snapshot restore /backup/etcd-snapshot.db \
+  --data-dir /var/lib/etcd-restored
+To use a backup made with etcdutl backup, simply copy the backup contents back into /var/lib/etcd and restart etcd.
+
+SECURITY
+Manifests
+=========
+/etc/kubernetes/manifests/
+
+Certificates API
+================
+➜  cat akashay.csr.yaml 
+apiVersion: certificates.k8s.io/v1
+kind: CertificateSigningRequest
+metadata:
+  name: akshay
+spec:
+  signerName: kubernetes.io/kube-apiserver-client
+  usages:
+  - digital signature
+  - client auth
+  request: |
+    LS0tLS1CRUdJTiBDRVJUSUZJQ0FURSBSRVFVRVNULS0tLS0KTUlJQ1ZqQ0NBVDRDQVFBd0VURVBN
+    QTBHQTFVRUF3d0dZV3R6YUdGNU1JSUJJakFOQmdrcWhraUc5dzBCQVFFRgpBQU9DQVE4QU1JSUJD
+    Z0tDQVFFQXJFTktZQzVoWmxVTzFhMUhROVhURWxrejV3eHdJWjRycnI4V3lLYkdQWUlxCmgrRmk2
+    eUhNTmdUZXVLMHJMQk85NlB2UVdQRUtQeXQ0NnJhSm9lSmw2VGV6UlJ0bDkvT3h5VWl2dS9KOGJx
+    UzQKRUNiRUl3akpQZGp1N29LeGw0dDA4d2lXRjAyb291WUg0NzVORFJwMzVxZWtCUkZ0bTNwNzNZ
+    QzQ1K0RlVnZGNgpLQXJrSGFPZXBWbThLYjk2N3FKS3VhVzcrbkdWUEFvWFhlbG9pcG9jQ0FsTWV5
+    c1hMTjloYlZ0VnpRdjBhWXVZCkdjL2FQa05GV21GNVQwNVlWVzYyNEluUHl1d0Fzb1M0RnY2M05q
+    RWI0alo0N2ZhZmoybjBHK0xlZUtPbVE5S2kKZk9pYUQzYzhLaVBSQk51NXZqRGdseGgzcHd3UWJF
+    cWZlbXNRSThaSVJRSURBUUFCb0FBd0RRWUpLb1pJaHZjTgpBUUVMQlFBRGdnRUJBSjlvaTFNVXFY
+    RmVYYXZyalQ0eWZzMEJ6QStPQ01ROEp0cnBheXlMN3N4dnZROHhkV3pNCklJbDhHZ3J0QmZGUnV3
+    ejNVNVYrV2dPdENXTkl1LzVxQ0NJL2c3NVVhS1AvSUYzNmg3OWRKamljMWY3Sm5kdXUKYU5GV1kv
+    NGhDVHJmblNVeWtjUElvNVArNzVOaDZiSWl0NVRueWZnWDJPeDZzbnU3RXNocDVHdlhtcDRUazhM
+    YgpUemhOdnBhbXZmU1MzNWFZMy9aNlNXNnVlTU9yQ2VsVDZUOGZPTWNpRDgreDljQzJNak84QnNT
+    TUgwRWxXL09XCmhQcHk4SDgxOTd1ZUdGYmtKSEFLQytaSy9PVkIzQXlIRExJNnYwTTk0VXBHeFpk
+    TTYzejdvRUpTMFU4VEdIUWsKOEdScUs5WitCWWt6VVJOVWpnNjNmVVJqdUdXUFZ4SlY0NzQ9Ci0t
+    LS0tRU5EIENFUlRJRklDQVRFIFJFUVVFU1QtLS0tLQo=
+
+To get status
+kubectl get csr akshay 
+kubectl get csr akshay -o yaml
+
+kubectl certificate approve <name>
+kubectl certificate deny <name>
+kbectl delete csr <name>
+
+kubeConfig
+==========
+
+~/.kube/config
+apiVersion: v1
+kind: Config
+
+current-context: <default context name>
+
+clusters:
+  # multiple clusters
+  - name: my-kube-playground
+    cluster:
+    certificate-authority: ca.crt
+    #certificate-authority-data: <base64-encoded-ca.crt-string>
+    # certificate-authority-data can be used instead of certificate-authority
+    server: https://my-kube-playground:6443
+
+contexts:
+  i# which user is used to access each cluster
+  - name: my-kube-admin@my-kube-playground
+    context:
+      cluster: my-kube-playground
+      user: my-kube-admin
+      namespace: <set-the-default-namespace>
+
+users:
+  # user accounts that access clusters
+  - name: my-kube-admin
+    user:
+      client-certificate: admin.crt
+      client-key: admin.key
+
+
+kubectl config view
+To change context:
+kubectl config use-conext <context-name> --kubeconfig <path-to-non-default-config>
+
+API Groups
+==========
+kubectl proxy - create proxy to access the api server
+
+Authorization
+=============
+RBAC
+Roles and Role Binings are namespaced
+
+kubectl auth can-i create deployments - a user can check if it has authorization to do something
+kubectl auth can-i create deployments -n <namespace> --as dev-user - impersonate a user to check authorization
+
+kubectl get roles -A
+kubectl describe role kube-proxy -n kube-system
+kubectl describe rolebinding kube-proxy -n kube-system
+
+cat developer-role.yaml developer-rolebind.yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  namespace: default
+  name: developer
+rules:
+- apiGroups: [""] # "" indicates the core API group
+  resources: ["pods"]
+  verbs: ["delete", "create", "list"]
+
+apiVersion: rbac.authorization.k8s.io/v1
+# This role binding allows "jane" to read pods in the "default" namespace.
+# You need to already have a Role named "pod-reader" in that namespace.
+kind: RoleBinding
+metadata:
+  name: dev-user-binding
+  namespace: default
+subjects:
+# You can specify more than one "subject"
+- kind: User
+  name: dev-user # "name" is case sensitive
+  apiGroup: rbac.authorization.k8s.io
+roleRef:
+  # "roleRef" specifies the binding to a Role / ClusterRole
+  kind: Role #this must be Role or ClusterRole
+  name: developer # this must match the name of the Role or ClusterRole you wish to bind to
+  apiGroup: rbac.authorization.k8s.io
+
+To edit Role:
+kubectl edit role developer -n blue
+
+ kubectl get role developer -n blue -o yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  creationTimestamp: "2025-08-12T14:36:32Z"
+  name: developer
+  namespace: blue
+  resourceVersion: "2375"
+  uid: f059e360-d979-43c9-b120-38297c8677c1
+rules:
+- apiGroups:
+  - apps
+  resources:
+  - deployments
+  verbs:
+  - create
+
+- apiGroups:
+  - ""
+  resourceNames:
+  - blue-app
+  - dark-blue-app
+  resources:
+  - pods
+  - deployments
+  verbs:
+  - get
+  - watch
+  - create
+  - delete
+
+Cluster Roles
+=============
+kubectl api-resources --namespaced=true
+kubectl api-resources --namespaced=false
+
+ClusterRole
+ClusterRolesBinding
+
+clusterrole can be created to namespaced resources which will be applied across namespaces. For example pods across all namespaces in the cluster.
+
+A new user michelle joined the team. She will be focusing on the nodes in the cluster. Create the required ClusterRoles and ClusterRoleBindings so she gets access to the nodes.
+
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  annotations:
+  name: nodes-admin
+rules:
+- apiGroups:
+  - '*'
+  resources:
+  - 'nodes'
+  verbs:
+  - '*'
+
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: nodes-admin
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: nodes-admin
+subjects:
+- apiGroup: rbac.authorization.k8s.io
+  kind: User
+  name: michelle
+
+
+michelle's responsibilities are growing and now she will be responsible for storage as well. Create the required ClusterRoles and ClusterRoleBindings to allow her access to Storage.
+
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  annotations:
+  name: storage-admin
+rules:
+- apiGroups:
+  - '*'
+  resources:
+  - 'persistentvolumes'
+  - 'storageclasses'
+  verbs:
+  - '*'
+
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: michelle-storage-admin
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: storage-admin
+subjects:
+- apiGroup: rbac.authorization.k8s.io
+  kind: User
+  name: michelle
