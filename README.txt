@@ -892,4 +892,105 @@ metadata:
   annotations:
     kubernetes.io/service-account.name: <serviceaccount name> # associate the serviceaccount
 
+Image Security
+==============
+
+kubectl create secret docker-registry regcred \
+--docker-server=
+--docker-username=
+--docker-password=
+--docker-email=
+
+In the pod yaml, in spec:
+  imagePullSecrets:
+  - name: regcred
+
+Security Context
+================
+In Pod spec add:
+  securityContext:
+    runAsUser: 1000
+
+This can be also set in the Container level along with:
+capabilities:
+  add: ["MAC_ADMIN"]
+
+apiVersion: v1
+items:
+- apiVersion: v1
+  kind: Pod
+  metadata:
+    name: ubuntu-sleeper
+    namespace: default
+  spec:
+    containers:
+    - command:
+      - sleep
+      - "4800"
+      image: ubuntu
+      imagePullPolicy: Always
+      name: ubuntu
+      securityContext:
+        capabilities:
+          add:
+          - SYS_TIME
+          - NET_ADMIN
+
+Network Policies
+================
+
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: db-policy
+spec:
+  podSelector:
+    matchLabels:
+      role: db # Pod association
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  - from:
+    - podSelector:
+        matchLabels:
+          name: api-pod # Any pod, in any namespace with this label will have access, so add namespaceSelector...
+# The namespaceSelector does not have a dash (-) to make the selector apply together. Adding a dash will allow access to all prod pods.
+      namespaceSelector: It is OK to have a namespace selector only without pod selector
+        matchLabels:
+          name: prod
+
+    ports:
+    - protocol: TCP
+      port: 3306
+
+  egress:
+  - to:
+    - ipBlock: # Allow access to hosts outside the cluster
+        cidr: 192.168.5.10/32
+
+    ports:
+    - protocol: TCP
+      port: 22
+
+
+Kubectx - switch context between clusters in a multi-cluster environment.
+kubens - switch between namespaces quickly.
+
+CRD - CustomResourceDefinition
+===
+
+Custom Controller - a code that listens to resources and handles them
+=================
+
+Operator Framework - package together CRD and Custom Cntroller.
+==================
+
+STORAGE
+
+
+
+
+
+NOT all solutions support network policies, for example Flannel, and the policies will not be enforced
 
